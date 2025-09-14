@@ -3,7 +3,6 @@ const canvas = document.getElementById('c');
 const ctx = canvas.getContext('2d');
 
 // --- Eye overlay (drugi canvas tylko na oczy) ---
-// --- Eye overlay (drugi canvas tylko na oczy) ---
 const eyeLayer = document.createElement('canvas');
 const eyeCtx   = eyeLayer.getContext('2d', { alpha: true });
 (function attachEyeLayer(){
@@ -12,14 +11,13 @@ const eyeCtx   = eyeLayer.getContext('2d', { alpha: true });
   eyeLayer.style.position = 'absolute';
   eyeLayer.style.pointerEvents = 'none';
   eyeLayer.style.zIndex = '1002';
-  eyeLayer.style.mixBlendMode = 'normal'; // <— ważne: zero miksowania z tłem
+  eyeLayer.style.mixBlendMode = 'normal';
   parent.appendChild(eyeLayer);
 })();
 function sizeAndPlaceEyeLayer(){
   const dpr = Math.max(1, window.devicePixelRatio || 1);
   const r   = canvas.getBoundingClientRect();
   const pr  = (canvas.parentElement || document.body).getBoundingClientRect();
-  // ustaw overlay dokładnie nad canvasem (pozycja + rozmiar)
   eyeLayer.style.left   = (r.left - pr.left) + 'px';
   eyeLayer.style.top    = (r.top  - pr.top ) + 'px';
   eyeLayer.style.width  = r.width  + 'px';
@@ -36,12 +34,20 @@ function fitCanvas(){
   canvas.width  = Math.round(cssW * dpr);
   canvas.height = Math.round(cssH * dpr);
   ctx.setTransform(dpr,0,0,dpr,0,0);
-  sizeAndPlaceEyeLayer(); // <— overlay dokładnie nad canvasem
+  sizeAndPlaceEyeLayer();
 }
 addEventListener('resize', fitCanvas); fitCanvas();
 function setEyeLayerVisible(show){
   eyeLayer.style.display = show ? '' : 'none';
 }
+
+// --- POMOCNICZE: skalowanie UI na małych ekranach (iPhone/iPad) ---
+function uiScale(W, H){
+  // 1.0 przy ~520×320, do 0.6 na najmniejszych ekranach
+  const s = Math.min(W/520, H/320);
+  return Math.max(0.6, Math.min(1.0, s));
+}
+
 // UI
 const feedBtn  = document.getElementById('feed');
 const sleepBtn = document.getElementById('sleep');
@@ -100,8 +106,8 @@ let love = { percent: 0, lastIncrementAt: 0, lastResetAt: 0 };
 let dayActions = { key: dayKey(new Date()), feed: 0, pet: false, counted: false };
 
 // Blokady miłości po przegranej (24h) i „raz dziennie” per minigra
-let loveLocks = { sky:0, cave:0, meadow:0, bubbles:0 }; // timestamp do kiedy blokada
-let dailyWin = { sky:'', cave:'', meadow:'', bubbles:'' }; // dayKey ostatniej nagrody
+let loveLocks = { sky:0, cave:0, meadow:0, bubbles:0 };
+let dailyWin  = { sky:'', cave:'', meadow:'', bubbles:'' };
 
 // ===== Mini-gry (tryb, stan) =====
 let mode = 'home'; // 'home' | 'game'
@@ -111,9 +117,9 @@ let game = null;   // obiekt stanu aktualnej mini-gry
 let postMsg = null; // {text, btn, rect}
 
 // DOM sloty / overlay
-let petNameSlot = null;       // slot na imię w panelu statystyk
-let namePlaceholderEl = null; // element w logo (#logoName)
-let pageOverlay = null;       // blokada i blur reszty strony
+let petNameSlot = null;
+let namePlaceholderEl = null;
+let pageOverlay = null;
 
 // DOM-owy badge z imieniem ma znikać w minigrach
 function hideNameBadge(hide){
@@ -123,7 +129,7 @@ function hideNameBadge(hide){
 
 // Player / zapis
 const SAVE_KEY = 'axolotl-save-v1';
-const DEFAULT_STATS = { glodek: 0, humorek: 100, spanko: 100, kapuKapu: 1 }; // start: 0/100/100/0
+const DEFAULT_STATS = { glodek: 0, humorek: 100, spanko: 100, kapuKapu: 1 }; // start 1% brudu
 const DEFAULT_PLAYER = { name: null, color: 'pink' };
 let stats = { ...DEFAULT_STATS };
 let player = { ...DEFAULT_PLAYER };
@@ -143,12 +149,12 @@ const RATES = {
   spankoDnSec:        0.02,
   humorekPetSec:      0.60,   // tylko w dzień
   kapuUpSec:          0.015,
-  humorekDnSec: 0.015
+  humorekDnSec:       0.015   // bazowy spadek nastroju, gdy nie śpi
 };
 
 // Spadek humorku przez brud
-const DIRTY_THRESHOLD = 75;      // próg 75%
-const DIRTY_MOOD_DROP = 0.05;    // spadek humorku / s gdy próg przekroczony
+const DIRTY_THRESHOLD = 75;
+const DIRTY_MOOD_DROP = 0.05;
 
 let lastSavedAt = Date.now();
 
@@ -175,7 +181,6 @@ function isNightNow(d=new Date()){
   const h = d.getHours();
   return (h >= NIGHT_START) || (h < DAY_START);
 }
-// klucz nocy: 21:00..23:59 -> dziś; 00:00..07:59 -> wczoraj
 function nightKeyForDate(d=new Date()){
   const h = d.getHours();
   return (h >= NIGHT_START) ? dayKey(d)
@@ -203,36 +208,34 @@ function saveState(){
 function applyProgress(dtSec, { sleeping: wasSleeping=false, petting=false } = {}){
   if (dtSec <= 0 || !isFinite(dtSec)) return;
 
-  // dzien/noc – modyfikatory
   const nightNow  = isNightNow();
-  const awakeAtNight = nightNow && nightOverrideActive() && !wasSleeping; // tylko gdy obudzony i nie śpi
+  const awakeAtNight = nightNow && nightOverrideActive() && !wasSleeping;
 
-  // głodek/spanko standardowo
+  // głodek/spanko
   stats.glodek = clamp(stats.glodek + RATES.glodekPerSec * dtSec);
   const dSpanko = wasSleeping ? RATES.spankoUpSec : -RATES.spankoDnSec;
   stats.spanko = clamp(stats.spanko + dSpanko * dtSec);
 
-  // MIZIANIE: w nocy nie wpływa na humorek; w dzień tak
-  const allowPetMood = !nightNow; // tylko w dzień
-  if (petting && allowPetMood){
+  // MIZIANIE: w dzień podbija nastrój
+  if (petting && !nightNow){
     stats.humorek = clamp(stats.humorek + (RATES.humorekPetSec) * dtSec);
   }
 
-  // nocny spadek humorku TYLKO gdy obudzony w nocy i NIE śpi
+  // nocny spadek nastroju, gdy obudzony
   if (awakeAtNight) stats.humorek = clamp(stats.humorek - NIGHT_MOOD_DROP * dtSec);
 
-  // spadek humorku przez brud >= 75%
+  // spadek za brud
   if (stats.kapuKapu >= DIRTY_THRESHOLD) {
     stats.humorek = clamp(stats.humorek - DIRTY_MOOD_DROP * dtSec);
   }
 
+  // bazowy spadek nastroju gdy nie śpi
+  if (!wasSleeping) {
+    stats.humorek = clamp(stats.humorek - RATES.humorekDnSec * dtSec);
+  }
+
   // brud rośnie
   stats.kapuKapu = clamp(stats.kapuKapu + RATES.kapuUpSec * dtSec);
-  // bazowy spadek humorku w czasie, gdy nie śpi
-if (!wasSleeping) {
-  stats.humorek = clamp(stats.humorek - RATES.humorekDnSec * dtSec);
-}
-
 }
 function loadState(){
   try{
@@ -277,19 +280,15 @@ function loadState(){
 
 // ====== UI ======
 function setButtonsEnabled(enabled){
-  const disabled = !enabled || mode==='game' || !!postMsg; // <- zablokuj przyciski przy komunikatach
-  // Nakarm: aktywny tylko >=75% głodka i nie w śnie
+  const disabled = !enabled || mode==='game' || !!postMsg;
   feedBtn.disabled  = disabled || sleeping || !(stats.glodek >= 75);
   sleepBtn.disabled = disabled || sleeping;
   wakeBtn.disabled  = disabled || !sleeping;
-  // Kąpiel: jeśli JUŻ jesteśmy w kąpieli -> zawsze można zakończyć,
-  // jeśli nie — aktywna tylko powyżej 75%
   bathBtn.disabled  = disabled || (!bathMode && !(stats.kapuKapu > 75));
 }
 
 function ensurePetNameSlot(){
   if (petNameSlot) return;
-  // znajdź kontener statystyk na podstawie jednego z pasków
   const anchor = humorekFill || glodekFill || spankoFill || kapuFill;
   const panel = anchor ? (anchor.closest('.stats') || anchor.parentElement?.parentElement) : null;
   if (!panel) return;
@@ -301,10 +300,9 @@ function ensurePetNameSlot(){
   panel.insertBefore(petNameSlot, panel.firstChild);
 }
 
-// === ZMIANA: szukamy / tworzymy #logoName w .logo (bez skanowania „Aksolotek”) ===
+// nazwę osadzamy w logo
 function findNamePlaceholder(){
   if (namePlaceholderEl) return;
-  // 1) dedykowany slot w logo
   namePlaceholderEl = document.querySelector('#logoName');
   if (!namePlaceholderEl){
     const logo = document.querySelector('.logo');
@@ -332,7 +330,6 @@ function setPageOverlay(on){
       pageOverlay.style.pointerEvents = 'auto';
     }
     if (!pageOverlay.isConnected) document.body.appendChild(pageOverlay);
-    // upewnij się, że canvas jest nad overlayem
     canvas.style.position = 'relative';
     canvas.style.zIndex = '1001';
   }else{
@@ -349,17 +346,15 @@ function syncUIFromState(){
   }
   bathBtn.textContent = bathMode ? 'Zakończ kąpiel' : 'Kąpiel 🛁';
 
-  // podświetlenie wybranego otoczenia
   document.querySelectorAll('[data-env]').forEach(btn=>{
     const on = btn.dataset.env===env;
     btn.setAttribute('aria-pressed', on ? 'true':'false');
     btn.classList.toggle('selected', on);
   });
 
-  // imię znika w minigrach
   hideNameBadge(mode==='game');
 }
-function pct(v){ return `${(Math.round(v*10)/10).toFixed(1)}%`; } // 1 miejsce po przecinku
+function pct(v){ return `${(Math.round(v*10)/10).toFixed(1)}%`; }
 function updateStatsUI(){
   if(glodekFill)  glodekFill.style.width  = pct(stats.glodek);
   if(humorekFill) humorekFill.style.width = pct(stats.humorek);
@@ -367,11 +362,8 @@ function updateStatsUI(){
   if(kapuFill)    kapuFill.style.width    = pct(stats.kapuKapu);
 }
 
-// === ZMIANA: imię w logo, bez duplikatu nad statami, bez „Aksolotek” ===
 function updateNameBadge(){
-  // chowamy istniejący badge przy canvasie
   if (nameBadge) nameBadge.style.display = 'none';
-
   ensurePetNameSlot();
   findNamePlaceholder();
 
@@ -381,10 +373,8 @@ function updateNameBadge(){
 
   if (namePlaceholderEl){
     namePlaceholderEl.textContent = show ? txtLogo : '';
-    // jeżeli mamy slot w logo, nie wyświetlaj nad statami
     if (petNameSlot){ petNameSlot.style.display = 'none'; }
   } else if (petNameSlot){
-    // Fallback: brak slotu w logo — pokaż nad statami
     petNameSlot.style.display = show ? '' : 'none';
     petNameSlot.textContent = show ? txtPanel : '';
   }
@@ -419,7 +409,7 @@ function openIntroIfNeeded(){
 }
 modalSave.onclick = ()=>{
   const nm = nameInput.value.trim();
-  if(!nm) return; // bezpiecznik
+  if(!nm) return;
   player.name = nm;
   player.color = chosenColor || 'pink';
   saveState();
@@ -428,7 +418,7 @@ modalSave.onclick = ()=>{
   syncUIFromState();
 };
 
-// Jeśli wymuszono „first run”, pokaż modal i WTEDY wyczyść sessionStorage
+// Jeśli wymuszono „first run”
 if (forcedFirstRun) {
   openIntroIfNeeded();
   try { sessionStorage.clear(); } catch{}
@@ -444,7 +434,6 @@ function setEnvironment(e){
   saveState();
   syncUIFromState();
 }
-// jeżeli w HTML nie ma przycisków otoczenia — dobuduj
 (function ensureEnvPanel(){
   const centerPanel = (el)=>{
     if(!el) return;
@@ -514,7 +503,6 @@ function tryAwardLoveBase(){
     saveState();
   }
 }
-// — dodatkowe przyrosty z minigier: raz dziennie na dany typ i brak przyrostu przy blokadzie 24h po porażce
 function canAddLoveForGame(type){
   const now = Date.now();
   if(loveLocks[type] && now < loveLocks[type]) return false;
@@ -575,7 +563,6 @@ function isOverAxolotl(x, y){
 // --- CZYSZCZENIE ---
 function cleanAtPoint(x, y, amount=1){
   if(!isOverAxolotl(x,y)) return;
-  // w trybie kąpieli czyścimy tylko do 40% (nie mniej)
   if(bathMode){
     stats.kapuKapu = Math.max(40, clamp(stats.kapuKapu - amount));
   }else{
@@ -594,12 +581,11 @@ function startPettingAt(x,y){
     const hy = y + (Math.random()*10-5);
     hearts.push({x: hx, y: hy, vx:(Math.random()*0.4-0.2), vy:-(0.8+Math.random()*0.6), life:1});
   }
-  // zalicz mizianie (dla miłości bazowej) – niezależnie od pory
   dayActions.pet = true;
   tryAwardLoveBase();
 }
 
-// ====== HOME: przycisk mini-gry w prawym dolnym rogu (zależnie od tła) ======
+// ====== HOME: przycisk mini-gry (prawy-dolny) ======
 let homeMiniBtn = null; // {x,y,w,h,type,label}
 function homeMiniButtonMeta(){
   switch(env){
@@ -613,23 +599,29 @@ function homeMiniButtonMeta(){
 function drawHomeMiniButton(W,H){
   if(!player.name || mode!=='home') { homeMiniBtn=null; return; }
   const meta = homeMiniButtonMeta();
+  const s = uiScale(W,H);
+
   ctx.save();
-  ctx.font='bold 14px system-ui,-apple-system,Segoe UI,Roboto,sans-serif';
-  const txtW = ctx.measureText(`${meta.emoji}  ${meta.label}`).width;
-  const pad = 12, bw = Math.min(12+txtW+12, Math.max(160, txtW+40));
-  const bh = 40;
+  ctx.font=`bold ${Math.round(14*s)}px system-ui,-apple-system,Segoe UI,Roboto,sans-serif`;
+  const label = `${meta.emoji}  ${meta.label}`;
+  const txtW = ctx.measureText(label).width;
+  const pad = 10*s;
+  const bh = Math.max(28, 40*s);
+  const bw = Math.min(12+txtW+12, Math.max(140*s, txtW + 32*s));
   const x = W - bw - pad;
   const y = H - bh - pad;
+
   ctx.globalAlpha = 0.92;
   ctx.fillStyle = 'rgba(15,23,42,0.65)';
-  if(ctx.roundRect) ctx.roundRect(x,y,bw,bh,12);
+  if(ctx.roundRect) ctx.roundRect(x,y,bw,bh,12*s);
   else { ctx.fillRect(x,y,bw,bh); }
   ctx.fill();
   ctx.globalAlpha = 1;
   ctx.fillStyle='#fff';
   ctx.textAlign='center'; ctx.textBaseline='middle';
-  ctx.fillText(`${meta.emoji}  ${meta.label}`, x+bw/2, y+bh/2);
+  ctx.fillText(label, x+bw/2, y+bh/2);
   ctx.restore();
+
   homeMiniBtn = {x,y,w:bw,h:bh,type:meta.type,label:meta.label};
 }
 
@@ -641,11 +633,10 @@ canvas.addEventListener('pointerdown', (e)=>{
   if(mode==='home' && postMsg){
     if(postMsg.rect && pointInRect(p.x,p.y, postMsg.rect)){
       postMsg = null;
-      setPageOverlay(false); // odblokuj stronę
+      setPageOverlay(false);
       syncUIFromState();
       setEyeLayerVisible(true);
     }
-    // blokuj inne interakcje podczas komunikatu
     return;
   }
 
@@ -654,7 +645,6 @@ canvas.addEventListener('pointerdown', (e)=>{
   if(!player.name) return;
   canvas.setPointerCapture(e.pointerId);
 
-  // Klik przycisku mini-gry na tle (prawy-dolny)
   if(homeMiniBtn && pointInRect(p.x,p.y,homeMiniBtn)){
     enterMiniGame(homeMiniBtn.type);
     return;
@@ -708,7 +698,6 @@ feedBtn.onclick = ()=>{
   if(!(stats.glodek >= 75)) return;
   if(eatTimer>0) return;
   eatTimer=1.2; snackProg=0; chewPhase=0;
-  // Nakarm: -30%
   stats.glodek  = clamp(stats.glodek - 30);
   ensureDayWindow();
   dayActions.feed = (dayActions.feed||0) + 1;
@@ -731,7 +720,6 @@ wakeBtn.onclick = ()=>{
 };
 bathBtn.onclick = ()=>{
   if(!player.name) return;
-  // Wejście do kąpieli – tylko jeśli >75%; wyjście – zawsze wolno
   if(!bathMode && !(stats.kapuKapu>75)) return;
   bathMode = !bathMode;
   if(bathMode){
@@ -808,23 +796,19 @@ function drawEyesOverlay(cx, headY, S, p){
   g.shadowBlur = 0; g.shadowOffsetX = 0; g.shadowOffsetY = 0;
   g.lineCap = 'round'; g.lineJoin = 'round';
 
-  // lewy i prawy środek oka (prawe przesunięte w lewo o ~S*0.01)
   const leftX  = cx - S*0.16;
-  const rightX = cx + S*0.15;  // było: + S*0.16
+  const rightX = cx + S*0.15;
 
   function one(x){
     if (p.eyeOpen > 0.07) {
-      // klip do elipsy, żeby błysk nigdy nie wyszedł poza kontur
       g.save();
       g.beginPath(); g.ellipse(x, eyeY, eyeR, eyeR, 0, 0, Math.PI*2); g.clip();
 
-      // źrenica
       g.save(); g.translate(x, eyeY); g.scale(1, p.eyeOpen);
       g.fillStyle = '#0b0b0b';
       g.beginPath(); g.ellipse(0,0, eyeR, eyeR, 0, 0, Math.PI*2); g.fill();
       g.restore();
 
-      // biały błysk — minimalnie mniejszy i głębiej w oku
       g.fillStyle = '#ffffff';
       const hlR = eyeR * 0.18;
       g.beginPath();
@@ -833,7 +817,6 @@ function drawEyesOverlay(cx, headY, S, p){
 
       g.restore();
     } else {
-      // zamknięte — łuk
       g.strokeStyle = '#0b0b0b';
       g.lineWidth = Math.max(2, S*0.012);
       g.beginPath(); g.arc(x, eyeY, eyeR*0.9, Math.PI*0.1, Math.PI*0.9); g.stroke();
@@ -867,7 +850,6 @@ function drawDirtByFraction(frac){
 
 // ====== Tła (otoczenia) ======
 
-// Oceaniczne tło
 function drawOceanBackground(W,H){
   const g = ctx.createLinearGradient(0,0,0,H);
   g.addColorStop(0,   '#0e2a47');
@@ -922,7 +904,6 @@ function drawOceanBackground(W,H){
   ctx.globalAlpha = 1;
 }
 
-// Jaskinia
 function drawCaveBackground(W,H){
   const g = ctx.createRadialGradient(W*0.5, H*0.3, H*0.2, W*0.5, H*0.7, H*0.9);
   g.addColorStop(0, '#1b1d27');
@@ -943,7 +924,6 @@ function drawCaveBackground(W,H){
   }
   ctx.globalAlpha = 1;
 
-  // stalaktyty
   ctx.fillStyle = '#0f1320';
   for(let i=0;i<14;i++){
     const x = (i+0.5)*W/14 + Math.sin(t*0.2 + i)*10;
@@ -957,7 +937,6 @@ function drawCaveBackground(W,H){
     ctx.closePath(); ctx.fill();
   }
 
-  // robaczki świętojańskie
   for(let i=0;i<18;i++){
     const x = (W*((i*67)%97)/97 + Math.sin(t*0.6+i)*30) % W;
     const y = H*0.25 + Math.sin(t*0.9 + i*0.7)*H*0.25 + (i%3)*14;
@@ -968,7 +947,6 @@ function drawCaveBackground(W,H){
     ctx.fill();
   }
 
-  // kropelki
   ctx.globalAlpha = 0.25;
   for(let i=0;i<10;i++){
     const x = ((i*W/10) + (t*30 + i*40)) % W;
@@ -978,19 +956,16 @@ function drawCaveBackground(W,H){
   ctx.globalAlpha = 1;
 }
 
-// Polana
 function drawMeadowBackground(W,H){
   const sky = ctx.createLinearGradient(0,0,0,H);
   sky.addColorStop(0,'#8ed1ff');
   sky.addColorStop(1,'#e0f7ff');
   ctx.fillStyle = sky; ctx.fillRect(0,0,W,H);
 
-  // słońce
   ctx.globalAlpha=0.35;
   ctx.beginPath(); ctx.arc(W*0.15, H*0.18, H*0.16, 0, Math.PI*2); ctx.fillStyle='#fff8cc'; ctx.fill();
   ctx.globalAlpha=1;
 
-  // trawa (warstwy falujące)
   function grass(yBase, hue){
     ctx.fillStyle = hue;
     ctx.beginPath();
@@ -1005,7 +980,6 @@ function drawMeadowBackground(W,H){
   grass(H*0.18, '#58a85c');
   grass(H*0.14, '#4c9651');
 
-  // pyłki
   ctx.globalAlpha = 0.5;
   for(let i=0;i<24;i++){
     const x = (i*W/24 + (t*20 + i*30)) % W;
@@ -1014,7 +988,6 @@ function drawMeadowBackground(W,H){
   }
   ctx.globalAlpha = 1;
 
-  // motylki-ambient (inne niż łapane)
   for(let i=0;i<6;i++){
     const x = (W*((i*37)%97)/97 + t*20 + i*50) % W;
     const y = H*0.3 + Math.sin(t*1.1 + i)*40;
@@ -1029,7 +1002,6 @@ function drawMeadowBackground(W,H){
   }
 }
 
-// Chmury — mocniej niebieskie dla kontrastu
 function drawCloudsBackground(W,H){
   const sky = ctx.createLinearGradient(0,0,0,H);
   sky.addColorStop(0,'#5aa3ff');
@@ -1062,7 +1034,6 @@ function drawCloudsBackground(W,H){
     ctx.restore();
   }
 
-  // więcej chmur (tło)
   for(let i=0;i<8;i++){
     const y = H*0.25 + Math.sin(t*0.7 + i)*20 + (i%3)*26;
     const speed = 12 + i*10;
@@ -1085,14 +1056,15 @@ function drawEnvironmentBackground(W,H){
 // Wskaźnik miłości – rysowanie (prawy górny róg)
 function drawLoveIndicator(W,H){
   const pctVal = love.percent || 0;
-  const boxW = 110, boxH = 34;
-  const x = W - boxW - 12;
-  const y = 12;
+  const s = uiScale(W,H);
+  const boxW = Math.round(110*s), boxH = Math.round(34*s);
+  const x = W - boxW - Math.round(12*s);
+  const y = Math.round(12*s);
   ctx.save();
   ctx.globalAlpha = 0.85;
   ctx.fillStyle = 'rgba(20,28,44,0.35)';
   ctx.beginPath();
-  const r = 10;
+  const r = 10*s;
   if(ctx.roundRect){ ctx.roundRect(x, y, boxW, boxH, r); }
   else{
     ctx.moveTo(x+r,y);
@@ -1104,21 +1076,19 @@ function drawLoveIndicator(W,H){
   ctx.fill();
   ctx.globalAlpha = 1;
 
-  // serduszko
   ctx.fillStyle = '#ff6b9a';
   ctx.beginPath();
-  const hx = x+16, hy = y+18, a=7;
+  const hx = x+Math.round(16*s), hy = y+Math.round(18*s), a=7*s;
   ctx.moveTo(hx,hy-2);
-  ctx.bezierCurveTo(hx+a, hy-12, hx+18, hy-2, hx, hy+10);
-  ctx.bezierCurveTo(hx-18, hy-2, hx-a, hy-12, hx, hy-2);
+  ctx.bezierCurveTo(hx+a, hy-12*s, hx+18*s, hy-2, hx, hy+10*s);
+  ctx.bezierCurveTo(hx-18*s, hy-2, hx-a, hy-12*s, hx, hy-2);
   ctx.fill();
 
-  // tekst %
   ctx.fillStyle = '#ffffff';
-  ctx.font = 'bold 14px system-ui, -apple-system, Segoe UI, Roboto, sans-serif';
+  ctx.font = `bold ${Math.round(14*s)}px system-ui, -apple-system, Segoe UI, Roboto, sans-serif`;
   ctx.textAlign = 'left';
   ctx.textBaseline = 'middle';
-  ctx.fillText(`${pctVal.toFixed(1)}%`, x+34, y+17);
+  ctx.fillText(`${pctVal.toFixed(1)}%`, x+Math.round(34*s), y+Math.round(17*s));
   ctx.restore();
 }
 function drawMouth(ctx, cx, headY, S, p){
@@ -1126,7 +1096,6 @@ function drawMouth(ctx, cx, headY, S, p){
   const mouthW = S * 0.125;
   const R      = mouthW / 2;
 
-  // offscreen dla prostego „zamykania” podczas przeżuwania
   const dpr  = Math.max(1, window.devicePixelRatio || 1);
   const pad  = 4;
   const wCSS = mouthW + pad * 2;
@@ -1138,20 +1107,17 @@ function drawMouth(ctx, cx, headY, S, p){
   oc.setTransform(dpr, 0, 0, dpr, 0, 0);
   oc.translate(wCSS / 2, pad);
 
-  // buzia
   oc.fillStyle = '#111';
   oc.beginPath();
   oc.moveTo(-R, 0); oc.lineTo(R, 0); oc.arc(0, 0, R, 0, Math.PI, false);
   oc.closePath(); oc.fill();
 
-  // język
   const tongueR  = R * 0.55;
   const tongueCY = R * 0.40;
   const palette  = PALETTES[player.color] || PALETTES.pink;
   oc.fillStyle = palette.tongue;
   oc.beginPath(); oc.arc(0, tongueCY, tongueR, 0, Math.PI, false); oc.fill();
 
-  // „zamykanie” przy jedzeniu
   const close = p.eating ? (0.50 - 0.50 * Math.sin(p.chew * 2.6)) : 0.0;
   const cutH  = close * (R + 2);
   oc.globalCompositeOperation = 'destination-out';
@@ -1168,12 +1134,10 @@ function drawAxolotl(ctx, W, H, p){
   const headY = H*0.40;
   const bodyY = H*0.63;
 
-  // TŁO + wskaźnik + przycisk mini-gry
   drawEnvironmentBackground(W,H);
   drawLoveIndicator(W,H);
 
   if(!player.name){
-    // jeśli brak imienia (ekran intro), wyczyść overlay oczu
     eyeCtx.clearRect(0,0, eyeLayer.width, eyeLayer.height);
     return;
   }
@@ -1283,30 +1247,28 @@ function drawAxolotl(ctx, W, H, p){
   capsuleFromHead(R_ANG[1], LEN[1], THK);
   capsuleFromHead(R_ANG[2], LEN[2], THK);
 
-    // Głowa
-// Głowa
-ctx.fillStyle = palette.body;
-ellipseFill(cx, headY, headRx, headRy);
+  // Głowa
+  ctx.fillStyle = palette.body;
+  ellipseFill(cx, headY, headRx, headRy);
 
-// Rumieńce — reset, żeby nigdy nie były „wyszarzone”
-ctx.globalAlpha = 1;
-ctx.globalCompositeOperation = 'source-over';
-ctx.filter = 'none';
-ctx.shadowColor = 'rgba(0,0,0,0)';
-ctx.shadowBlur = 0; ctx.shadowOffsetX = 0; ctx.shadowOffsetY = 0;
+  // Rumieńce
+  ctx.globalAlpha = 1;
+  ctx.globalCompositeOperation = 'source-over';
+  ctx.filter = 'none';
+  ctx.shadowColor = 'rgba(0,0,0,0)';
+  ctx.shadowBlur = 0; ctx.shadowOffsetX = 0; ctx.shadowOffsetY = 0;
 
-ctx.fillStyle = palette.blush;
-ellipseFill(cx - S*0.235, headY + S*0.015, S*0.028, S*0.028);
-ellipseFill(cx + S*0.235, headY + S*0.015, S*0.028, S*0.028);
+  ctx.fillStyle = palette.blush;
+  ellipseFill(cx - S*0.235, headY + S*0.015, S*0.028, S*0.028);
+  ellipseFill(cx + S*0.235, headY + S*0.015, S*0.028, S*0.028);
 
-
-  // Usta z językiem — PRZED oczami (oczy są na overlayu)
+  // Usta
   drawMouth(ctx, cx, headY, S, p);
 
-  // Oczy (overlay z białymi kropkami)
+  // Oczy (overlay)
   drawEyesOverlay(cx, headY, S, p);
 
-  // BRUD (1:1 z paskiem — od 0 do 100)
+  // BRUD
   if(stats.kapuKapu > 0){
     if(dirtSeeds.length === 0){
       const sampler = ()=>{
@@ -1333,10 +1295,9 @@ ellipseFill(cx + S*0.235, headY + S*0.015, S*0.028, S*0.028);
     dirtSeeds.length = 0;
   }
 
-  // Serca (poza kąpielą)
   if(!bathMode) hearts.forEach(h=> heart(h.x,h.y,8));
 
-  // GĄBKA — absolutnie czysta (bez plam)
+  // GĄBKA
   if(bathMode){
     const r = canvas.getBoundingClientRect();
     const Wc = r.width, Hc = r.height;
@@ -1345,23 +1306,20 @@ ellipseFill(cx + S*0.235, headY + S*0.015, S*0.028, S*0.028);
     const x = sponge.x ?? (W*0.82);
     const y = sponge.y ?? (H*0.80);
     ctx.save();
-    // pełny reset efektów
     ctx.globalAlpha = 1;
     ctx.globalCompositeOperation = 'source-over';
     ctx.filter = 'none';
     ctx.shadowColor = 'rgba(0,0,0,0)';
     ctx.shadowBlur = 0; ctx.shadowOffsetX = 0; ctx.shadowOffsetY = 0;
     ctx.translate(x, y);
-    // gąbka
     ctx.fillStyle = '#ffd660';
     ellipseFill(0,0, spongeR*1.1, spongeR*0.75);
-    // delikatny połysk (biały, nie szary)
     ctx.fillStyle = 'rgba(255,255,255,0.35)';
     ellipseFill(-spongeR*0.3, -spongeR*0.25, spongeR*0.35, spongeR*0.22);
     ctx.restore();
   }
 
-  // PRZEKĄSKA — robaczek
+  // PRZEKĄSKA
   if (p.snack>0){
     const u = p.snack;
     const startX = cx - S*0.80, startY = headY + S*0.02;
@@ -1386,7 +1344,6 @@ ellipseFill(cx + S*0.235, headY + S*0.015, S*0.028, S*0.028);
 
   ctx.restore();
 
-  // przycisk mini-gry (prawe-dolne)
   drawHomeMiniButton(W,H);
 }
 
@@ -1404,32 +1361,30 @@ function enterMiniGame(type){
     score: 0,
     over: false,
     win: false,
-    timeLeft: 45, // domyślny limit czasu
+    timeLeft: 45,
     buttons: { back: {x: null, y: null, w: 90, h: 32} }
   };
 
   if(type==='sky'){
-    // Chmureczki Skakaneczki — 60s biegu, gracz stoi w miejscu i tylko skacze
     env = 'chmury';
     game = {
       ...common,
       title: 'Chmureczki Skakaneczki',
-      duration: 60,            // pełna minuta
+      duration: 60,
       elapsed: 0,
       g: 1400,
       dist: 0,
-      player: {x: 140, y: 280, vx: 0, vy: 0, onGround: false}, // stoi (vx=0)
+      player: {x: 140, y: 280, vx: 0, vy: 0, onGround: false},
       platforms: [],
       nextPlatX: 200
     };
     spawnSkyInitial();
   }else if(type==='cave'){
-    // Jaskiniowa Ucieczka — 60s; ciągła generacja klifów
     env = 'jaskinia';
     game = {
       ...common,
       title: 'Jaskiniowa Ucieczka',
-      timeLeft: 60, // minuta biegu
+      timeLeft: 60,
       g: 1700,
       player: {x: 120, y: 320, vy: 0, onGround: true, sliding:false, slideT:0},
       speed: 300,
@@ -1463,20 +1418,21 @@ function enterMiniGame(type){
 function exitMiniGameWithoutReward(){
   game = null;
   mode = 'home';
+  setEyeLayerVisible(true);
   syncUIFromState();
 }
 function showPostMessage(text){
   postMsg = { text, btn:'Wyjdź', rect:null };
-  setPageOverlay(true); // zablokuj i rozmyj resztę strony
+  setPageOverlay(true);
   setEyeLayerVisible(false);
-  syncUIFromState(); // zablokuj przyciski podczas komunikatu
+  syncUIFromState();
 }
 function endGame(outcome){
   if(!game) return;
   const type = game.type;
-  if(type==='sky'){ // Chmureczki Skakaneczki
+  if(type==='sky'){
     if(outcome==='win'){
-      stats.kapuKapu = 0; // pełne umycie
+      stats.kapuKapu = 0;
       addLoveForGame('sky');
       showPostMessage('Brawo kochanie! Chmurki pozwoliły aksolotkowi się umyć! Jeeej! 😘💖💞💋🥰');
     }else{
@@ -1484,17 +1440,19 @@ function endGame(outcome){
       lockLoveForGame('sky');
       showPostMessage('O nieee! Aksolotek spadł i wpadł do błotka! Jest teraz bardziej brudny! 😭🥺😢💔❤️');
     }
-  }else if(type==='cave'){ // Jaskiniowa Ucieczka
+  }else if(type==='cave'){
     if(outcome==='win'){
       stats.glodek = 0;
       addLoveForGame('cave');
       showPostMessage('Udało Ci się! Na końcu była duża rybka i aksolotek jest teraz najedzony! 😘💖💞💋🥰');
     }else{
       stats.glodek = clamp(stats.glodek + 10);
+      // ⬇️ poprawka: w jaskini też się brudzi
+      stats.kapuKapu = clamp(stats.kapuKapu + 10);
       lockLoveForGame('cave');
       showPostMessage('Niestety, ale aksolotek spadł i minęło dużo czasu zanim wyszedł. Bardzo zgłodniał! 😭🥺😢💔❤️');
     }
-  }else if(type==='meadow'){ // Motylkowi Przyjaciele
+  }else if(type==='meadow'){
     if(outcome==='win'){
       stats.humorek = 100;
       addLoveForGame('meadow');
@@ -1504,15 +1462,16 @@ function endGame(outcome){
       lockLoveForGame('meadow');
       showPostMessage('Niestety, ale wszyscy przyjaciele uciekli i aksolotek jest sam! 😭🥺😢💔❤️');
     }
-  }else if(type==='bubbles'){ // Bąbeleczki
+  }else if(type==='bubbles'){
     if(outcome==='win'){
       stats.spanko = 100;
       addLoveForGame('bubbles');
       showPostMessage('Chyba w tych bąbelkach coś było, bo aksolotek tryska energią! Hihi 😘💖💞💋🥰');
     }else{
+      // ⬇️ poprawka: spada SPANKO + nowy komunikat
       stats.spanko = clamp(stats.spanko - 10);
-lockLoveForGame('bubbles');
-showPostMessage('Niestety kochanie, ale aksolotek nie złapał duzio bąbelków i do tego się bardzo zmęczył! 😭🥺😢💔❤️');
+      lockLoveForGame('bubbles');
+      showPostMessage('Niestety kochanie, ale aksolotek nie złapał duzio bąbelków i do tego się bardzo zmęczył! 😭🥺😢💔❤️');
     }
   }
 
@@ -1520,20 +1479,26 @@ showPostMessage('Niestety kochanie, ale aksolotek nie złapał duzio bąbelków 
   exitMiniGameWithoutReward();
 }
 
-// HUD gry
+// HUD gry – responsywny
 function drawHUDGame(W,H){
+  const s = uiScale(W,H);
+  const pad = Math.round(10*s);
+  const rowH = Math.round(34*s);
+
   ctx.save();
-  // tytuł gry
+  // tytuł
   ctx.fillStyle = 'rgba(15,23,42,0.35)';
-  ctx.fillRect(10,10, Math.min(300, W-220), 34);
+  const titleW = Math.min(Math.round(300*s), W - Math.round(220*s));
+  ctx.fillRect(10*s,10*s, titleW, rowH);
   ctx.fillStyle = '#fff';
-  ctx.font = 'bold 14px system-ui,-apple-system,Segoe UI,Roboto,sans-serif';
+  ctx.font = `bold ${Math.round(14*s)}px system-ui,-apple-system,Segoe UI,Roboto,sans-serif`;
   ctx.textAlign = 'left';
   ctx.textBaseline = 'middle';
-  ctx.fillText(game.title || 'Mini-gra', 18, 27);
+  ctx.fillText(game.title || 'Mini-gra', 18*s, 27*s);
 
-  // przycisk WYJDŹ — wyjście w trakcie = przegrana
-  const bx = W-95, by = 14, bw = 82, bh = 26;
+  // Wyjdź
+  const bw = Math.round(82*s), bh = Math.round(26*s);
+  const bx = W - (bw + 13*s), by = 14*s;
   ctx.fillStyle = '#e11d48';
   ctx.fillRect(bx,by,bw,bh);
   ctx.fillStyle = '#fff';
@@ -1544,35 +1509,35 @@ function drawHUDGame(W,H){
   // Czas / Punkty
   ctx.fillStyle = 'rgba(15,23,42,0.35)';
   if(game.type==='sky'){
-    ctx.fillRect(200,10, 160, 34);
+    const rw = Math.round(160*s);
+    ctx.fillRect(200*s,10*s, rw, rowH);
     ctx.fillStyle = '#fff';
     ctx.textAlign='center';
     const left = Math.max(0, Math.ceil(game.duration - game.elapsed));
-    ctx.fillText(`Czas: ${left}s`, 280, 27);
+    ctx.fillText(`Czas: ${left}s`, 200*s+rw/2, 27*s);
   }else{
-    ctx.fillRect(200,10, 200, 34);
+    const rw = Math.round(200*s);
+    ctx.fillRect(200*s,10*s, rw, rowH);
     ctx.fillStyle = '#fff';
     ctx.textAlign='center';
-    ctx.fillText(`Czas: ${Math.ceil(game.timeLeft)}  •  ${Math.floor(game.score)} pkt`, 300, 27);
+    ctx.fillText(`Czas: ${Math.ceil(game.timeLeft)}  •  ${Math.floor(game.score)} pkt`, 200*s+rw/2, 27*s);
   }
 
   ctx.restore();
 }
 
-// ====== MINI-GRY: 1) CHMURECZKI SKAKANECZKI (Chmury, 60s) ======
+// ====== MINI-GRY: 1) CHMURECZKI SKAKANECZKI ======
 function spawnSkyInitial(){
   const dpr = Math.max(1, window.devicePixelRatio||1);
   const H = canvas.height/dpr, W = canvas.width/dpr;
   game.platforms = [];
   let x = 100;
   let lastY = 320;
-  // startowa paczka chmur
   for(let i=0;i<24;i++){
     const w = 140 + Math.random()*90;
     const y = clamp(lastY + (-50 + Math.random()*100), 150, 420);
     game.platforms.push({x, y, w});
-    // odstępy (1–2 skoki)
-    const gap = 160 + Math.random()*160; // 160..320
+    const gap = 160 + Math.random()*160;
     x += gap;
     lastY = y;
   }
@@ -1581,62 +1546,51 @@ function spawnSkyInitial(){
 function skySpawnMore(){
   const dpr = Math.max(1, window.devicePixelRatio||1);
   const W = canvas.width/dpr;
-  // Generuj do przodu – nextPlatX liczymy względem przewijania
   while(game.nextPlatX < W + 800){
     const w = 140 + Math.random()*90;
     const lastY = game.platforms.length ? game.platforms[game.platforms.length-1].y : 320;
     const y = clamp(lastY + (-50 + Math.random()*100), 150, 420);
     const x = game.nextPlatX;
     game.platforms.push({x, y, w});
-    const gap = 160 + Math.random()*160; // 160..320
+    const gap = 160 + Math.random()*160;
     game.nextPlatX += gap;
   }
 }
 function updateSky(dt, W, H){
   const p = game.player;
-  // zegar 60s
   game.elapsed += dt;
 
-  // grawitacja i pionowy ruch gracza (x nie zmieniamy — stoi)
   p.vy += game.g*dt;
   p.y  += p.vy*dt;
 
-  // przesuw świata w lewo („bieg chmur”)
   const scroll = 180*dt;
   game.platforms.forEach(pl=> pl.x -= scroll);
-  // przesuwamy także „punkt przyszłej chmury”
   game.nextPlatX -= scroll;
 
   game.dist += scroll;
   game.score += scroll*0.25;
 
-  // spawn kolejnych chmur
   skySpawnMore();
 
-  // kolizje z platformami (kontakt od góry)
   p.onGround = false;
   for(const pl of game.platforms){
-    if(140 > pl.x-10 && 140 < pl.x+pl.w+10){ // x gracza stałe ~140
+    if(140 > pl.x-10 && 140 < pl.x+pl.w+10){
       const groundY = pl.y - 12;
       if(p.vy>0 && p.y >= groundY && p.y <= groundY+28){
         p.y = groundY; p.vy = 0; p.onGround = true;
       }
     }
   }
-  // usuwanie poza ekran
   game.platforms = game.platforms.filter(pl=> pl.x+pl.w > -60);
 
-  // spadnięcie
   if(p.y > H+40){ endGame('lose'); return; }
 
-  // zwycięstwo po 60 sekundach
   if(game.elapsed >= game.duration){
     endGame('win');
   }
 }
 function drawSky(W,H){
   drawCloudsBackground(W,H);
-  // platformy
   ctx.fillStyle = '#ffffff';
   for(const pl of game.platforms){
     ctx.beginPath();
@@ -1644,11 +1598,10 @@ function drawSky(W,H){
     else ctx.fillRect(pl.x, pl.y-12, pl.w, 24);
     ctx.fill();
   }
-  // gracz – mini sylwetka
   drawMiniAxo(140, game.player.y, 0.42);
 }
 
-// ====== MINI-GRY: 2) JASKINIOWA UCIECZKA (Jaskinia, 60s) ======
+// ====== MINI-GRY: 2) JASKINIOWA UCIECZKA ======
 function spawnCaveObst(){
   const dpr = Math.max(1, window.devicePixelRatio||1);
   const W = canvas.width/dpr;
@@ -1665,17 +1618,13 @@ function spawnCaveObst(){
 }
 function updateCave(dt,W,H){
   const p = game.player;
-  // grawitacja + ruch pionowy
   p.vy += game.g*dt;
   p.y  += p.vy*dt;
 
-  // przegrana: spadł na „ziemię”
   if(p.y >= H-18 && p.vy >= 0){ endGame('lose'); return; }
 
-  // kontakt z sufitem (bez przegranej – odbicie)
   if(p.y<10){ p.y=10; p.vy=0; }
 
-  // przesuw świata
   const dx = game.speed*dt;
   game.obstacles.forEach(o=> o.x -= dx);
   game.nextObsX -= dx;
@@ -1683,7 +1632,6 @@ function updateCave(dt,W,H){
   spawnCaveObst();
   game.obstacles = game.obstacles.filter(o=> o.x > -80);
 
-  // kolizja (prosta kapsuła)
   const px = 120, py = p.y;
   const r  = 16;
   for(const o of game.obstacles){
@@ -1692,15 +1640,12 @@ function updateCave(dt,W,H){
     }
   }
 
-  // punkty z dystansu
   game.score += dx*0.1;
 
-  // koniec po minucie -> wygrana
   if(game.timeLeft<=0){ endGame('win'); return; }
 }
 function drawCave(W,H){
   drawCaveBackground(W,H);
-  // przeszkody
   ctx.fillStyle = '#0f1320';
   for(const o of game.obstacles){
     ctx.fillRect(o.x, 0, 32, o.topH);
@@ -1709,7 +1654,7 @@ function drawCave(W,H){
   drawMiniAxo(120, game.player.y, 0.44);
 }
 
-// ====== MINI-GRY: 3) MOTYLKOWI PRZYJACIELE (Polana) ======
+// ====== MINI-GRY: 3) MOTYLKOWI PRZYJACIELE ======
 function spawnButterfly(){
   const dpr = Math.max(1, window.devicePixelRatio||1);
   const W = canvas.width/dpr;
@@ -1722,13 +1667,11 @@ function spawnButterfly(){
 }
 function updateMeadow(dt,W,H){
   const p = game.player;
-  // BEZ OPÓŹNIENIA — teleport na pozycję kursora/palca (natychmiast)
   if(p.target){
     p.x = clamp(p.target.x, 20, W-20);
     p.y = clamp(p.target.y, 60, H-20);
   }
 
-  // motylki
   for(const b of game.butterflies){
     b.t += dt*2.2;
     b.vx += Math.sin(b.t)*4;
@@ -1737,21 +1680,20 @@ function updateMeadow(dt,W,H){
     if(b.x<20||b.x>W-20) b.vx*=-1;
     if(b.y<60||b.y>H-30) b.vy*=-1;
   }
-  // łapanie
   for(let i=game.butterflies.length-1;i>=0;i--){
     const b = game.butterflies[i];
     const dx = p.x - b.x, dy = p.y - b.y;
     if(dx*dx+dy*dy < 26*26){ game.score += 1; game.butterflies.splice(i,1); spawnButterfly(); }
   }
-if (game.score >= 90) { endGame('win'); return; }
-  // warunek zwycięstwa po czasie — od 90 pkt
+  // Wygrana natychmiast po osiągnięciu progu
+  if (game.score >= 90) { endGame('win'); return; }
+
   if(game.timeLeft<=0){
     if(game.score>=90) endGame('win'); else endGame('lose');
   }
 }
 function drawMeadow(W,H){
   drawMeadowBackground(W,H);
-  // motylki
   for(const b of game.butterflies){
     ctx.save();
     ctx.translate(b.x,b.y);
@@ -1765,7 +1707,7 @@ function drawMeadow(W,H){
   drawMiniAxo(game.player.x, game.player.y, 0.40);
 }
 
-// ====== MINI-GRY: 4) BĄBELECZKI (Ocean) ======
+// ====== MINI-GRY: 4) BĄBELECZKI ======
 function updateBubbles(dt,W,H){
   game.spawnT -= dt;
   if(game.spawnT<=0){
@@ -1780,8 +1722,9 @@ function updateBubbles(dt,W,H){
     b.x += Math.sin(b.wob)*18*dt;
     b.y += b.vy*dt;
   }
+  // Wygrana natychmiast
   if (game.score >= 80) { endGame('win'); return; }
-  // usuwaj
+
   game.bubbles = game.bubbles.filter(b=> b.y + b.r > -10);
 
   if(game.timeLeft<=0){
@@ -1810,7 +1753,6 @@ function drawMiniAxo(x,y,scale=0.4){
   ctx.save();
   ctx.translate(x,y);
   const S = 60*scale*2.2;
-  // ogon
   ctx.fillStyle = palette.body;
   ctx.beginPath();
   ctx.moveTo(-S*0.06,  S*0.10);
@@ -1818,25 +1760,23 @@ function drawMiniAxo(x,y,scale=0.4){
   ctx.quadraticCurveTo( S*0.04,  S*0.30, -S*0.06,  S*0.20);
   ctx.closePath(); ctx.fill();
 
-  // tułów
   ellipseFill(0, 8, S*0.38, S*0.48);
   ctx.fillStyle = palette.belly;
   ellipseFill(0, 14, S*0.28, S*0.38);
 
-  // głowa
   ctx.fillStyle = palette.body;
   ellipseFill(0, -18, S*0.44, S*0.34);
-  // skrzela
+
   ctx.fillStyle = palette.frill;
   ellipseFill(-S*0.34, -18, S*0.12, S*0.06);
   ellipseFill(-S*0.38, -6, S*0.10, S*0.05);
   ellipseFill( S*0.34, -18, S*0.12, S*0.06);
   ellipseFill( S*0.38, -6, S*0.10, S*0.05);
-  // oczy
+
   ctx.fillStyle='#111';
   ellipseFill(-S*0.16, -22, S*0.06, S*0.06);
   ellipseFill( S*0.16, -22, S*0.06, S*0.06);
-  // rumieniec
+
   ctx.fillStyle = palette.blush;
   ellipseFill(-S*0.26, -10, S*0.05, S*0.04);
   ellipseFill( S*0.26, -10, S*0.05, S*0.04);
@@ -1848,19 +1788,15 @@ const keys = new Set();
 addEventListener('keydown', (e)=>{
   if(mode!=='game') return;
   keys.add(e.key);
-  // skok (sky/cave):
   if(e.key===' ' || e.key==='ArrowUp'){
     if(game.type==='sky'){
       const p = game.player;
-      // JEDEN skok — tylko z podłoża
       if(p.onGround){ p.vy = -540; p.onGround=false; }
     }else if(game.type==='cave'){
       const p = game.player;
-      // skok PRZY KAŻDYM tapnięciu/kliknięciu
       p.vy = -520;
     }
   }
-  // ślizg (cave)
   if(game.type==='cave' && (e.key==='ArrowDown' || e.key==='s')){
     game.player.sliding = true; game.player.slideT = 0.4;
   }
@@ -1873,7 +1809,6 @@ addEventListener('keyup', (e)=>{
 // ====== Input w grach: pointer ======
 function gamePointerDown(e){
   const p = getCanvasPos(e);
-  // przycisk wyjścia? Wyjście w trakcie = przegrana
   if(pointInRect(p.x,p.y, game.buttons.back)){
     endGame('lose');
     return;
@@ -1881,16 +1816,13 @@ function gamePointerDown(e){
 
   if(game.type==='sky'){
     const pl = game.player;
-    // JEDEN skok — tylko z podłoża
     if(pl.onGround){ pl.vy=-540; pl.onGround=false; }
   }else if(game.type==='cave'){
     const pl = game.player;
-    // skok na każde tapnięcie
     pl.vy=-520;
   }else if(game.type==='meadow'){
     game.player.target = {x:p.x, y:p.y};
   }else if(game.type==='bubbles'){
-    // pop bąbelka
     for(let i=game.bubbles.length-1;i>=0;i--){
       const b = game.bubbles[i];
       const dx=b.x-p.x, dy=b.y-p.y;
@@ -1909,11 +1841,9 @@ function gamePointerUp(e){
 
 // ====== Pętla główna ======
 function update(dt){
-  // egzekwuj dzień/noc
   enforceDayNight();
 
   if(mode==='home'){
-    // mruganie
     if(!sleeping && eyeVel===0 && eyeOpen>=0.99 && t>=nextBlinkAt) eyeVel=-8;
     if(eyeVel!==0){
       eyeOpen += eyeVel*dt;
@@ -1941,17 +1871,12 @@ function update(dt){
     return;
   }
 
-  // ====== tryb mini-gry ======
   if(!game || game.over){ return; }
 
-  // czas gry
-  if(game.type==='sky'){
-    // liczony w updateSky
-  }else{
+  if(game.type!=='sky'){
     game.timeLeft -= dt; if(game.timeLeft<0) game.timeLeft=0;
   }
 
-  // update konkretnej gry
   const dpr = Math.max(1, window.devicePixelRatio||1);
   const W = canvas.width/dpr, H = canvas.height/dpr;
 
@@ -2017,30 +1942,30 @@ function loop(now){
 
     drawAxolotl(ctx, W, H, params);
 
-    // Komunikat po grze — zawijanie i przycisk
     if(postMsg){
+      const s = uiScale(W,H);
       ctx.save();
       ctx.fillStyle='rgba(0,0,0,0.55)';
       ctx.fillRect(0,0,W,H);
 
       const maxBoxW = Math.min(500, W-40);
-      const margin = 20;
-      const font = 'bold 18px system-ui,-apple-system,Segoe UI,Roboto,sans-serif';
+      const margin = Math.round(16*s);
+      const font = `bold ${Math.round(18*s)}px system-ui,-apple-system,Segoe UI,Roboto,sans-serif`;
       ctx.font = font;
       ctx.fillStyle='#fff';
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
 
       const lines = wrapTextLines(postMsg.text, maxBoxW - margin*2, font);
-      const lineH = 24;
-      const textH = lines.length * lineH + 10;
-      const btnH = 42;
-      const boxH = Math.min(H-60, textH + btnH + margin*2 + 10);
+      const lineH = Math.round(24*s);
+      const textH = lines.length * lineH + 10*s;
+      const btnH = Math.round(42*s);
+      const boxH = Math.min(H-60*s, textH + btnH + margin*2 + 10*s);
       const boxW = maxBoxW;
       const x = (W-boxW)/2, y=(H-boxH)/2;
 
       ctx.fillStyle='#0f172a';
-      if(ctx.roundRect) ctx.roundRect(x,y,boxW,boxH,14); else ctx.fillRect(x,y,boxW,boxH);
+      if(ctx.roundRect) ctx.roundRect(x,y,boxW,boxH,14*s); else ctx.fillRect(x,y,boxW,boxH);
       ctx.fill();
 
       ctx.fillStyle='#ffffff';
@@ -2053,16 +1978,16 @@ function loop(now){
         ty += lineH;
       }
 
-      const bw = 120, bh = 36, bx=x+boxW/2-bw/2, by=y+boxH- margin - bh;
+      const bw = Math.round(120*s), bh = Math.round(36*s);
+      const bx=x+boxW/2-bw/2, by=y+boxH- margin - bh;
       ctx.fillStyle='#22c55e'; ctx.fillRect(bx,by,bw,bh);
-      ctx.fillStyle='#fff'; ctx.font='bold 16px system-ui,-apple-system,Segoe UI,Roboto,sans-serif';
+      ctx.fillStyle='#fff'; ctx.font=`bold ${Math.round(16*s)}px system-ui,-apple-system,Segoe UI,Roboto,sans-serif`;
       ctx.fillText('Wyjdź', bx+bw/2, by+bh/2+1);
       postMsg.rect = {x:bx,y:by,w:bw,h:bh};
       ctx.restore();
     }
 
   }else if(mode==='game' && game){
-    // w trybie gry: oczy nie są rysowane — wyczyść overlay, by nic nie „zostawało”
     eyeCtx.clearRect(0,0, eyeLayer.width, eyeLayer.height);
 
     if(game.type==='sky')        drawSky(W,H);
