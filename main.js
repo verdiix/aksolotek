@@ -2,91 +2,7 @@
 const canvas = document.getElementById('c');
 const ctx = canvas.getContext('2d');
 
-
-// === Mobile helpers: fullscreen + orientation + touch behavior ===
-canvas.style.touchAction = 'none';
-document.documentElement.style.touchAction = 'none';
-
-function preventNativeScroll(e){
-  // allow scrolling only on inputs, if any
-  if (e.target && e.target.closest('input,textarea,select,[contenteditable]')) return;
-  e.preventDefault();
-}
-document.addEventListener('touchmove', preventNativeScroll, {passive:false});
-document.addEventListener('gesturestart', (e)=>e.preventDefault(), {passive:false});
-document.addEventListener('dblclick', (e)=>e.preventDefault(), {passive:false});
-
-function updateOrientationClass(){
-  const portrait = window.matchMedia('(orientation: portrait)').matches;
-  document.body.classList.toggle('portrait', portrait);
-}
-addEventListener('orientationchange', ()=>{ updateOrientationClass(); fitCanvas(); });
-addEventListener('resize', ()=>{ updateOrientationClass(); fitCanvas(); });
-if (window.visualViewport) visualViewport.addEventListener('resize', ()=>{ updateOrientationClass(); fitCanvas(); });
-
-async function requestFullscreenLandscape(){
-  try{
-    const el = document.documentElement; // fallback to root
-    if (!document.fullscreenElement && el.requestFullscreen) {
-      await el.requestFullscreen({ navigationUI: 'hide' });
-    }
-    if (screen.orientation && screen.orientation.lock) {
-      await screen.orientation.lock('landscape').catch(()=>{});
-    }
-  }catch(_){}
-}
-async function exitFullscreenIfNeeded(){
-  try{
-    if (document.fullscreenElement && document.exitFullscreen) {
-      await document.exitFullscreen();
-    }
-  }catch(_){}
-}
-updateOrientationClass();
-
 // --- Eye overlay (drugi canvas tylko na oczy) ---
-
-// === Mobile helpers: fullscreen + orientation + touch behavior ===
-canvas.style.touchAction = 'none';
-document.documentElement.style.touchAction = 'none';
-
-function preventNativeScroll(e){
-  // allow scrolling only on inputs, if any
-  if (e.target && e.target.closest('input,textarea,select,[contenteditable]')) return;
-  e.preventDefault();
-}
-document.addEventListener('touchmove', preventNativeScroll, {passive:false});
-document.addEventListener('gesturestart', (e)=>e.preventDefault(), {passive:false});
-document.addEventListener('dblclick', (e)=>e.preventDefault(), {passive:false});
-
-function updateOrientationClass(){
-  const portrait = window.matchMedia('(orientation: portrait)').matches;
-  document.body.classList.toggle('portrait', portrait);
-}
-addEventListener('orientationchange', ()=>{ updateOrientationClass(); fitCanvas(); });
-addEventListener('resize', ()=>{ updateOrientationClass(); fitCanvas(); });
-if (window.visualViewport) visualViewport.addEventListener('resize', ()=>{ updateOrientationClass(); fitCanvas(); });
-
-async function requestFullscreenLandscape(){
-  try{
-    const el = document.documentElement; // fallback to root
-    if (!document.fullscreenElement && el.requestFullscreen) {
-      await el.requestFullscreen({ navigationUI: 'hide' });
-    }
-    if (screen.orientation && screen.orientation.lock) {
-      await screen.orientation.lock('landscape').catch(()=>{});
-    }
-  }catch(_){}
-}
-async function exitFullscreenIfNeeded(){
-  try{
-    if (document.fullscreenElement && document.exitFullscreen) {
-      await document.exitFullscreen();
-    }
-  }catch(_){}
-}
-updateOrientationClass();
-
 // --- Eye overlay (drugi canvas tylko na oczy) ---
 const eyeLayer = document.createElement('canvas');
 const eyeCtx   = eyeLayer.getContext('2d', { alpha: true });
@@ -115,24 +31,14 @@ function sizeAndPlaceEyeLayer(){
 }
 function fitCanvas(){
   const dpr = Math.max(1, window.devicePixelRatio || 1);
-  let cssW, cssH;
-  if (document.body.classList.contains('minigame')){
-    const vv = window.visualViewport;
-    cssW = Math.round((vv ? vv.width : window.innerWidth));
-    cssH = Math.round((vv ? vv.height : window.innerHeight));
-  } else {
-    cssW = canvas.clientWidth;
-    const ratio = canvas.height && canvas.width ? (canvas.height/canvas.width) : (150/300);
-    cssH = Math.round(cssW * ratio);
-  }
-  canvas.width  = Math.max(1, Math.round(cssW * dpr));
-  canvas.height = Math.max(1, Math.round(cssH * dpr));
+  const cssW = canvas.clientWidth;
+  const cssH = Math.round(cssW * (canvas.height/canvas.width));
+  canvas.width  = Math.round(cssW * dpr);
+  canvas.height = Math.round(cssH * dpr);
   ctx.setTransform(dpr,0,0,dpr,0,0);
-  sizeAndPlaceEyeLayer();
+  sizeAndPlaceEyeLayer(); // <— overlay dokładnie nad canvasem
 }
-addEventListener('resize', fitCanvas);
-if (window.visualViewport) visualViewport.addEventListener('resize', fitCanvas);
-fitCanvas();
+addEventListener('resize', fitCanvas); fitCanvas();
 function setEyeLayerVisible(show){
   eyeLayer.style.display = show ? '' : 'none';
 }
@@ -729,7 +635,6 @@ function drawHomeMiniButton(W,H){
 
 // ====== MOUSE/TOUCH HOME & GAME ======
 canvas.addEventListener('pointerdown', (e)=>{
-  e.preventDefault();
   const p = getCanvasPos(e);
 
   // Post-Game komunikat — tylko przycisk „Wyjdź” działa
@@ -770,7 +675,6 @@ canvas.addEventListener('pointerdown', (e)=>{
   }
 });
 canvas.addEventListener('pointermove', (e)=>{
-  e.preventDefault();
   if(mode==='game'){ gamePointerMove(e); return; }
   if(!player.name) return;
   const p = getCanvasPos(e);
@@ -1490,10 +1394,6 @@ ellipseFill(cx + S*0.235, headY + S*0.015, S*0.028, S*0.028);
 function enterMiniGame(type){
   if(!player.name) return;
   mode = 'game';
-  document.body.classList.add('minigame');
-  updateOrientationClass();
-  requestFullscreenLandscape();
-
   setEyeLayerVisible(false);
   bathMode = false;
   syncUIFromState();
@@ -1561,9 +1461,6 @@ function enterMiniGame(type){
   saveState();
 }
 function exitMiniGameWithoutReward(){
-  document.body.classList.remove('minigame');
-  exitFullscreenIfNeeded();
-  updateOrientationClass();
   game = null;
   mode = 'home';
   syncUIFromState();
@@ -1593,11 +1490,9 @@ function endGame(outcome){
       addLoveForGame('cave');
       showPostMessage('Udało Ci się! Na końcu była duża rybka i aksolotek jest teraz najedzony! 😘💖💞💋🥰');
     }else{
-      // przegrana w jaskini = bardziej brudny i głodniejszy
-      stats.kapuKapu = clamp(stats.kapuKapu + 10);
-      stats.glodek   = clamp(stats.glodek + 10);
+      stats.glodek = clamp(stats.glodek + 10);
       lockLoveForGame('cave');
-      showPostMessage('Niestety, aksolotek spadł i się ubrudził, a do tego bardzo zgłodniał! 😭🥺😢💔❤️');
+      showPostMessage('Niestety, ale aksolotek spadł i minęło dużo czasu zanim wyszedł. Bardzo zgłodniał! 😭🥺😢💔❤️');
     }
   }else if(type==='meadow'){ // Motylkowi Przyjaciele
     if(outcome==='win'){
