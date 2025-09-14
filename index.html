@@ -1,0 +1,76 @@
+<!DOCTYPE html>
+<html lang="pl">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Aksolotek ❤️</title>
+  <link rel="manifest" href="manifest.webmanifest" />
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <div class="wrap">
+    <header class="topbar">
+      <div class="logo">🐾 </div>
+      <div class="stats">
+        <div class="stat">
+          <span>Głodek</span>
+          <div class="bar"><div id="glodekFill" class="fill"></div></div>
+        </div>
+        <div class="stat">
+          <span>Humorek</span>
+          <div class="bar"><div id="humorekFill" class="fill"></div></div>
+        </div>
+        <div class="stat">
+          <span>Spanko</span>
+          <div class="bar"><div id="spankoFill" class="fill"></div></div>
+        </div>
+        <div class="stat">
+          <span>Kąpu Kąpu</span>
+          <div class="bar"><div id="kapuFill" class="fill"></div></div>
+        </div>
+      </div>
+    </header>
+
+    <div id="nameBadge" class="name-badge" style="display:none"></div>
+
+    <div class="stage">
+      <canvas id="c" width="960" height="600"></canvas>
+    </div>
+
+    <footer class="controls">
+      <button id="feed"  class="btn">Nakarm 🍤</button>
+      <button id="sleep" class="btn">Śpij 😴</button>
+      <button id="wake"  class="btn">Obudź 🌞</button>
+      <button id="bath"  class="btn">Kąpiel 🛁</button>
+      <button id="reset" class="btn btn-ghost">Reset ↺</button>
+    </footer>
+  </div>
+
+  <!-- Modal startowy -->
+  <div id="introModal" class="modal">
+    <div class="modal-card">
+      <h2 class="modal-title">Hejka kochanie! 💖</h2>
+      <p class="modal-sub">
+        Daj imię swojemu aksolotkowi i wybierz kolorek!
+      </p>
+
+      <label class="field">
+        <span>Imię</span>
+        <input id="nameInput" type="text" placeholder="np. Puszek" />
+      </label>
+
+      <div class="colors">
+        <button class="color-option pink selected"   data-color="pink"   aria-label="Różowy"></button>
+        <button class="color-option blue"            data-color="blue"   aria-label="Niebieski"></button>
+        <button class="color-option yellow"          data-color="yellow" aria-label="Żółty"></button>
+      </div>
+
+      <div class="modal-actions">
+        <button id="modalSave" class="btn btn-accept" disabled>Zapisz ✨</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="main.js"></script>
+</body>
+</html>
