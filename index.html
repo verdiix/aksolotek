@@ -2,15 +2,10 @@
 <html lang="pl">
 <head>
   <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Aksolotek ❤️</title>
   <link rel="manifest" href="manifest.webmanifest" />
   <link rel="stylesheet" href="styles.css" />
-
-  <meta name="apple-mobile-web-app-capable" content="yes" />
-  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
-  <meta name="format-detection" content="telephone=no" />
-  <meta name="theme-color" content="#0b1220" />
 </head>
 <body>
   <div class="wrap">
@@ -30,52 +25,51 @@
           <div class="bar"><div id="spankoFill" class="fill"></div></div>
         </div>
         <div class="stat">
-          <span>Brudek</span>
+          <span>Kąpu Kąpu</span>
           <div class="bar"><div id="kapuFill" class="fill"></div></div>
         </div>
       </div>
     </header>
 
-    <main class="stage">
-      <!-- Imię (badge) -->
-      <div id="nameBadge" class="name-badge" hidden></div>
+    <div id="nameBadge" class="name-badge" style="display:none"></div>
 
-      <!-- Canvas gry -->
-      <canvas id="c" width="900" height="520"></canvas>
+    <div class="stage">
+      <canvas id="c" width="960" height="600"></canvas>
+    </div>
 
-      <!-- Panel przycisków (poza przyciskiem „Wyjdź” rysowanym na canvasie) -->
-      <div class="controls">
-        <button id="feed"  class="btn">Karm 🎣</button>
-        <button id="bath"  class="btn">Kąpiel 🫧</button>
-        <button id="sleep" class="btn">Śpij 😴</button>
-        <button id="wake"  class="btn btn-ghost">Obudź 🌙</button>
-        <button id="reset" class="btn btn-ghost">Reset ♻️</button>
+    <footer class="controls">
+      <button id="feed"  class="btn">Nakarm 🍤</button>
+      <button id="sleep" class="btn">Śpij 😴</button>
+      <button id="wake"  class="btn">Obudź 🌞</button>
+      <button id="bath"  class="btn">Kąpiel 🛁</button>
+      <button id="reset" class="btn btn-ghost">Reset ↺</button>
+    </footer>
+  </div>
+
+  <!-- Modal startowy -->
+  <div id="introModal" class="modal">
+    <div class="modal-card">
+      <h2 class="modal-title">Hejka kochanie! 💖</h2>
+      <p class="modal-sub">
+        Daj imię swojemu aksolotkowi i wybierz kolorek!
+      </p>
+
+      <label class="field">
+        <span>Imię</span>
+        <input id="nameInput" type="text" placeholder="np. Puszek" />
+      </label>
+
+      <div class="colors">
+        <button class="color-option pink selected"   data-color="pink"   aria-label="Różowy"></button>
+        <button class="color-option blue"            data-color="blue"   aria-label="Niebieski"></button>
+        <button class="color-option yellow"          data-color="yellow" aria-label="Żółty"></button>
       </div>
-    </main>
 
-    <!-- Modal startowy: imię + kolorek -->
-    <div id="introModal" class="modal" aria-hidden="true">
-      <div class="modal-card">
-        <h2>Jak ma na imię Twój aksolotek? 🥰</h2>
-        <div class="form-row">
-          <label for="nameInput">Imię</label>
-          <input id="nameInput" type="text" maxlength="18" placeholder="np. Pysio" />
-        </div>
-
-        <h3>Kolorek</h3>
-        <div class="colors">
-          <button class="color-option pink selected"   data-color="pink"   aria-label="Różowy"></button>
-          <button class="color-option blue"            data-color="blue"   aria-label="Niebieski"></button>
-          <button class="color-option yellow"          data-color="yellow" aria-label="Żółty"></button>
-        </div>
-
-        <div class="modal-actions">
-          <button id="modalSave" class="btn btn-accept" disabled>Zapisz ✨</button>
-        </div>
+      <div class="modal-actions">
+        <button id="modalSave" class="btn btn-accept" disabled>Zapisz ✨</button>
       </div>
     </div>
   </div>
-
 
   <script src="main.js"></script>
 </body>
