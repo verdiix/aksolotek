@@ -110,6 +110,7 @@ body{
 .controls{
   display:flex; gap:10px; justify-content: center;
   margin-top: 14px;
+  flex-wrap: wrap;
 }
 .btn{
   appearance:none; border:0;
@@ -122,6 +123,7 @@ body{
   transform: translateY(0);
   transition: transform .06s ease, filter .2s ease, opacity .2s;
   border: 2px solid #ffc4e4;
+  font-size: 15px;
 }
 .btn:hover{ filter: brightness(1.05); }
 .btn:active{ transform: translateY(1px); }
@@ -204,3 +206,20 @@ body{
 }
 .env-panel button.selected{ background: var(--pink); color:#fff; }
 .env-panel button[aria-pressed="true"]{ box-shadow: 0 0 0 2px #ffc4e4 inset; }
+
+/* --- ULEPSZENIA NA iPhone/iPad (responsywność) --- */
+@media (max-width: 740px){
+  .wrap{ margin: 10px auto 14px; padding: 0 10px; }
+  .topbar{ padding:10px 12px; border-radius:14px; }
+  .stats{ gap:8px; }
+  .stat span{ font-size: 10px; margin-bottom:4px; }
+  .bar{ height: 9px; }
+  .stage{ padding:8px; border-radius:16px; }
+  .btn{ padding: 8px 12px; font-size: 14px; border-radius: 12px; }
+}
+@media (max-width: 420px){
+  .wrap{ margin: 8px auto 12px; padding: 0 8px; }
+  .bar{ height: 8px; }
+  .btn{ padding: 7px 10px; font-size: 13px; }
+  .logo{ padding:4px 8px; }
+}
